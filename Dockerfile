@@ -1,17 +1,21 @@
-FROM mongo
+FROM mongo:latest
 
-MAINTAINER <Aashrey Sharma> aashreysh@gmail.com
+MAINTAINER <Shane Pemmelaar> spemmelaar@gmail.com
 
-// Auth Configuration. Modify as needed. 
-// These environment variables can also be specified through command line or docker-compose configuration
-# ENV AUTH yes
+# If the AUTH env variable is set then the mongod process is started with the --auth flag:
+# - AUTH
 
-# ENV MONGODB_ADMIN_USER root
-# ENV MONGODB_ADMIN_PASS password
+# If both of the following env variables are supplied an admin user is created with the privileges stored in the admin database:
+# - MONGODB_ADMIN_USERNAME
+# - MONGODB_ADMIN_PASSWORD
 
-# ENV MONGODB_APPLICATION_DATABASE your_db
-# ENV MONGODB_APPLICATION_USER user
-# ENV MONGODB_APPLICATION_PASS password
+# If the following 3 env variables are supplied an application username/password is created with read write privelliges over 
+# the specified database. In addition, the MONGODB_APPLICATION_AUTH_DATABASE may optionally be set so that application user privelliges
+# will be set in that specified database. Otherwise, by default it is set in the database for which you are specifying the credentials
+# to apply to (MONGODB_APPLICATION_DATABASE):
+# - MONGODB_APPLICATION_USERNAME
+# - MONGODB_APPLICATION_PASSWORD
+# - MONGODB_APPLICATION_DATABASE
 
 EXPOSE 27017 27017
 

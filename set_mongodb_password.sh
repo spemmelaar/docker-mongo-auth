@@ -1,13 +1,7 @@
 #!/bin/bash
 
-# Admin User
-MONGODB_ADMIN_USER=${MONGODB_ADMIN_USER:-"admin"}
-MONGODB_ADMIN_PASS=${MONGODB_ADMIN_PASS:-"4dmInP4ssw0rd"}
-
-# Application Database User
-MONGODB_APPLICATION_DATABASE=${MONGODB_APPLICATION_DATABASE:-"admin"}
-MONGODB_APPLICATION_USER=${MONGODB_APPLICATION_USER:-"restapiuser"}
-MONGODB_APPLICATION_PASS=${MONGODB_APPLICATION_PASS:-"r3sT4pIp4ssw0rd"}
+CREATE_ADMIN_USER=true
+CREATE_APPLICATION_USER=true
 
 # Wait for MongoDB to boot
 RET=1
@@ -18,30 +12,66 @@ while [[ RET -ne 0 ]]; do
     RET=$?
 done
 
-# Create the admin user
-echo "=> Creating admin user with a password in MongoDB"
-mongo admin --eval "db.createUser({user: '$MONGODB_ADMIN_USER', pwd: '$MONGODB_ADMIN_PASS', roles:[{role:'root',db:'admin'}]});"
-
-sleep 3
-
-# If we've defined the MONGODB_APPLICATION_DATABASE environment variable and it's a different database
-# than admin, then create the user for that database.
-# First it authenticates to Mongo using the admin user it created above.
-# Then it switches to the REST API database and runs the createUser command 
-# to actually create the user and assign it to the database.
-if [ "$MONGODB_APPLICATION_DATABASE" != "admin" ]; then
-    echo "=> Creating a ${MONGODB_APPLICATION_DATABASE} database user with a password in MongoDB"
-    mongo admin -u $MONGODB_ADMIN_USER -p $MONGODB_ADMIN_PASS << EOF
-echo "Using $MONGODB_APPLICATION_DATABASE database"
-use $MONGODB_APPLICATION_DATABASE
-db.createUser({user: '$MONGODB_APPLICATION_USER', pwd: '$MONGODB_APPLICATION_PASS', roles:[{role:'dbOwner', db:'$MONGODB_APPLICATION_DATABASE'}]})
-EOF
+# Check if an admin user andn admin password need to be set.
+if [ -z "$MONGODB_ADMIN_USERNAME" ]; then
+    CREATE_ADMIN_USER=false
 fi
 
-sleep 1
+if [ -z "$MONGODB_ADMIN_PASSWORD" ]; then
+    CREATE_ADMIN_USER=false
+fi
 
-# If everything went well, add a file as a flag so we know in the future to not re-create the
-# users if we're recreating the container (provided we're using some persistent storage)
+# Check if an application user and application password need to be set for an application db.
+if [ -z "$MONGODB_APPLICATION_USERNAME" ]; then
+    CREATE_APPLICATION_USER=false
+fi
+
+if [ -z "$MONGODB_APPLICATION_PASSWORD" ]; then
+    CREATE_APPLICATION_USER=false
+fi
+
+if [ -z "$MONGODB_APPLICATION_DATABASE" ]; then
+    CREATE_APPLICATION_USER=false
+fi
+
+if [  "$CREATE_ADMIN_USER" = false  ]; then
+# If no admin user is to be set create a temporary admin user in order to create other database users, before deleting it later in the script.
+    echo "=> Root user will not be created."
+    MONGODB_ADMIN_USERNAME=admin
+    MONGODB_ADMIN_PASSWORD=$(openssl rand -base64 48)
+else
+    echo "=> Creating admin user with a password in MongoDB"
+fi
+
+mongo admin --eval "db.createUser({user: '$MONGODB_ADMIN_USERNAME', pwd: '$MONGODB_ADMIN_PASSWORD', roles: [ { role: 'userAdminAnyDatabase', db: 'admin' } ] });"
+
+sleep 2
+
+if [ "$CREATE_APPLICATION_USER" = true ]; then
+
+    if [ -z "$MONGODB_APPLICATION_AUTH_DATABASE" ]; then
+        MONGODB_APPLICATION_AUTH_DATABASE=${MONGODB_APPLICATION_DATABASE}
+    fi
+
+    echo "=> Creating the application user with a password in MongoDB on database ${MONGODB_APPLICATION_AUTH_DATABASE}"
+    mongo admin -u $MONGODB_ADMIN_USERNAME -p $MONGODB_ADMIN_PASSWORD << EOF
+    use $MONGODB_APPLICATION_AUTH_DATABASE
+    db.createUser({user: '$MONGODB_APPLICATION_USERNAME', pwd: '$MONGODB_APPLICATION_PASSWORD', roles: [ { role:'dbOwner', db: '$MONGODB_APPLICATION_DATABASE' }] })
+EOF
+else
+    echo "=> Application database user will not be created."
+fi
+
+sleep 2
+
+# Remove the admin user if one has not been declared through the environment variables. 
+if [  "$CREATE_ADMIN_USER" = false  ]; then
+    mongo admin -u $MONGODB_ADMIN_USERNAME -p $MONGODB_ADMIN_PASSWORD << EOF
+db.dropUser("$MONGODB_ADMIN_USERNAME")
+EOF
+    echo "=> Admin user has now been removed."
+fi
+
 touch /data/db/.mongodb_password_set
 
 echo "MongoDB configured successfully. You may now connect to the DB."
